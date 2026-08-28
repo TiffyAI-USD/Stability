@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TUSD Liquidity Audit</title>
+    <!-- Load Ethers.js v5 from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #121212; color: #00ffcc; padding: 20px; }
+        .card { background: #1e1e1e; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-top: 15px; word-break: break-all; }
+        button { background: #00ffcc; color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 5px; width: 100%; font-size: 16px; margin-top: 10px; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+
+    <h2>TUSD-Nitro Liquidity Audit</h2>
+    <p>Tap below to query the live BSC pool contract directly from your phone.</p>
+    
+    <button onclick="runAudit()">Run Pool Audit</button>
+
+    <div class="card">
+        <h3>Output Log:</h3>
+        <pre id="output">Waiting for action...</pre>
+    </div>
+
+    <script>
+        async function runAudit() {
+            const output = document.getElementById("output");
+            output.innerText = "Connecting to BSC network...";
+
+            try {
+                // Connect to Binance Smart Chain public RPC
+                const provider = new ethers.providers.JsonRpcProvider("https://bsc-dataseed.binance.org/");
+
+                const PAIR_ADDRESS = "0x859f7dc6c5bd2fb75a765cbba63a071941cdb2ac";
+                const TUSD_TOKEN_ADDRESS = "0xcf11e2D51481Cb59Bf015FCc84324d1659984D07";
+
+                const PAIR_ABI = [
+                    "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+                    "function token0() external view returns (address)",
+                    "function token1() external view returns (address)"
+                ];
+
+                const ERC20_ABI = [
+                    "function symbol() external view returns (string)",
+                    "function decimals() external view returns (uint8)"
+                ];
+
+                const pairContract = new ethers.Contract(PAIR_ADDRESS, PAIR_ABI, provider);
+
+                output.innerText = "Fetching pair contract details...";
+
+                const [token0Address, token1Address, reserves] = await Promise.all([
+                    pairContract.token0(),
+                    pairContract.token1(),
+                    pairContract.getReserves()
+                ]);
+
+                const token0Contract = new ethers.Contract(token0Address, ERC20_ABI, provider);
+                const token1Contract = new ethers.Contract(token1Address, ERC20_ABI, provider);
+
+                const [sym0, dec0, sym1, dec1] = await Promise.all([
+                    token0Contract.symbol(),
+                    token0Contract.decimals(),
+                    token1Contract.symbol(),
+                    token1Contract.decimals()
+                ]);
+
+                const formattedReserve0 = ethers.utils.formatUnits(reserves.reserve0, dec0);
+                const formattedReserve1 = ethers.utils.formatUnits(reserves.reserve1, dec1);
+
+                let statusText = "Status: OK";
+                if (token0Address.toLowerCase() === TUSD_TOKEN_ADDRESS.toLowerCase() || 
+                    token1Address.toLowerCase() === TUSD_TOKEN_ADDRESS.toLowerCase()) {
+                    statusText += " - TUSD-Nitro verified in this pool!";
+                } else {
+                    statusText += " - WARNING: TUSD address mismatch!";
+                }
+
+                output.innerText = 
+                    `=== LIQUIDITY POOL AUDIT ===\n\n` +
+                    `Pair: ${PAIR_ADDRESS}\n\n` +
+                    `Token 0: [${sym0}]\n` +
+                    `Address: ${token0Address}\n` +
+                    `Reserve 0: ${formattedReserve0}\n\n` +
+                    `Token 1: [${sym1}]\n` +
+                    `Address: ${token1Address}\n` +
+                    `Reserve 1: ${formattedReserve1}\n\n` +
+                    `${statusText}`;
+
+            } catch (err) {
+                output.innerText = "Error querying blockchain: " + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
