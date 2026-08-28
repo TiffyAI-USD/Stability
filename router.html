@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Router Security Audit</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #121212; color: #ff5555; padding: 20px; }
+        .card { background: #1e1e1e; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-top: 15px; word-break: break-all; }
+        button { background: #ff5555; color: #fff; border: none; padding: 12px 20px; font-weight: bold; border-radius: 5px; width: 100%; font-size: 16px; margin-top: 10px; }
+        pre { white-space: pre-wrap; word-wrap: break-word; color: #00ffcc; }
+    </style>
+</head>
+<body>
+
+    <h2>Router Injection Audit</h2>
+    <p>Tap below to check the factory and ownership bindings of your pool pair.</p>
+    
+    <button onclick="checkRouter()">Audit Pair Bindings</button>
+
+    <div class="card">
+        <h3>Output Log:</h3>
+        <pre id="output">Waiting for action...</pre>
+    </div>
+
+    <script>
+        async function checkRouter() {
+            const output = document.getElementById("output");
+            output.innerText = "Connecting to BSC network...";
+
+            const rpcUrls = [
+                "https://bsc-dataseed1.binance.org/",
+                "https://rpc.ankr.com/bsc"
+            ];
+
+            let provider = null;
+            for (const url of rpcUrls) {
+                try {
+                    provider = new ethers.providers.JsonRpcProvider(url);
+                    await provider.getBlockNumber();
+                    break;
+                } catch (e) { continue; }
+            }
+
+            if (!provider) {
+                output.innerText = "Error: Could not connect to RPC.";
+                return;
+            }
+
+            try {
+                const PAIR_ADDRESS = "0x859f7dc6c5bd2fb75a765cbba63a071941cdb2ac";
+                
+                // Official PancakeSwap V2 Factory address for comparison
+                const OFFICIAL_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73";
+
+                const PAIR_ABI = [
+                    "function factory() external view returns (address)",
+                    "function token0() external view returns (address)",
+                    "function token1() external view returns (address)"
+                ];
+
+                const pairContract = new ethers.Contract(PAIR_ADDRESS, PAIR_ABI, provider);
+
+                output.innerText = "Querying pair factory bindings...";
+
+                const [factoryAddress, t0, t1] = await Promise.all([
+                    pairContract.factory(),
+                    pairContract.token0(),
+                    pairContract.token1()
+                ]);
+
+                let factoryStatus = "SECURE: Matches Official PancakeSwap Factory";
+                if (factoryAddress.toLowerCase() !== OFFICIAL_FACTORY.toLowerCase()) {
+                    factoryStatus = "DANGER: UNKNOWN OR INJECTED FACTORY DETECTED!";
+                }
+
+                output.innerText = 
+                    `=== PAIR SECURITY AUDIT ===\n\n` +
+                    `Pair Address: ${PAIR_ADDRESS}\n\n` +
+                    `Factory Bound: ${factoryAddress}\n` +
+                    `Official Factory: ${OFFICIAL_FACTORY}\n\n` +
+                    `Status: ${factoryStatus}\n\n` +
+                    `Token 0: ${t0}\n` +
+                    `Token 1: ${t1}`;
+
+            } catch (err) {
+                output.innerText = "Error reading pair contract: " + err.message + 
+                    "\n\n(Note: If this throws an error, the address might not be a standard V2 pair, confirming a non-standard or altered deployment).";
+            }
+        }
+    </script>
+</body>
+</html>
