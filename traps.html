@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V3 Position & NFT Audit</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #121212; color: #00ffcc; padding: 20px; }
+        .card { background: #1e1e1e; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-top: 15px; word-break: break-all; }
+        input { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; font-family: monospace; margin-top: 5px; box-sizing: border-box; }
+        button { background: #00ffcc; color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 5px; width: 100%; font-size: 16px; margin-top: 15px; }
+        pre { white-space: pre-wrap; word-wrap: break-word; color: #ffcc00; }
+    </style>
+</head>
+<body>
+
+    <h2>V3 Position NFT Audit</h2>
+    <p>Check your deployer address for trapped liquidity position NFTs on PancakeSwap V3.</p>
+    
+    <label>Your Deployer Wallet Address:</label>
+    <input type="text" id="walletAddress" placeholder="0x..." />
+
+    <button onclick="auditPositions()">Scan Positions</button>
+
+    <div class="card">
+        <h3>Output Log:</h3>
+        <pre id="output">Enter your address and tap scan...</pre>
+    </div>
+
+    <script>
+        async function auditPositions() {
+            const output = document.getElementById("output");
+            const wallet = document.getElementById("walletAddress").value.trim();
+
+            if (!ethers.utils.isAddress(wallet)) {
+                output.innerText = "Error: Please enter a valid EVM wallet address.";
+                return;
+            }
+
+            output.innerText = "Connecting to BSC and scanning position manager...";
+
+            try {
+                const provider = new ethers.providers.JsonRpcProvider("https://bsc-dataseed1.binance.org/");
+                
+                // Official PancakeSwap V3 NonfungiblePositionManager on BSC
+                const POSITION_MANAGER = "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364";
+
+                const NFT_ABI = [
+                    "function balanceOf(address owner) external view returns (uint256)",
+                    "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
+                    "function positions(uint256 tokenId) external view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)"
+                ];
+
+                const nftContract = new ethers.Contract(POSITION_MANAGER, NFT_ABI, provider);
+
+                // 1. Check how many position NFTs the wallet owns
+                const balance = await nftContract.balanceOf(wallet);
+                const count = balance.toNumber();
+
+                if (count === 0) {
+                    output.innerText = `Scan Complete:\n\nWallet: ${wallet}\n\nResult: 0 V3 Position NFTs found on the Position Manager.\n\n(This means no active V3 liquidity tokens are currently tied directly to this address as NFTs. If tokens are missing from a test swap, they were likely consumed in pool routing or single-sided execution rather than minted as an LP position).`;
+                    return;
+                }
+
+                let report = `FOUND ${count} V3 POSITION NFT(S) FOR THIS WALLET:\n\n`;
+
+                // 2. Loop through each token ID owned by the user
+                for (let i = 0; i < count; i++) {
+                    const tokenId = await nftContract.tokenOfOwnerByIndex(wallet, i);
+                    const pos = await nftContract.positions(tokenId);
+
+                    report += `--- Position NFT ID: ${tokenId.toString()} ---\n`;
+                    report += `Token 0: ${pos.token0}\n`;
+                    report += `Token 1: ${pos.token1}\n`;
+                    report += `Fee Tier: ${pos.fee / 10000}%\n`;
+                    report += `Liquidity Amount: ${pos.liquidity.toString()}\n`;
+                    report += `Unclaimed Tokens Owed 0: ${pos.tokensOwed0.toString()}\n`;
+                    report += `Unclaimed Tokens Owed 1: ${pos.tokensOwed1.toString()}\n\n`;
+                }
+
+                output.innerText = report;
+
+            } catch (err) {
+                output.innerText = "Error scanning contract: " + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
