@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TUSD Liquidity Audit</title>
-    <!-- Load Ethers.js v5 from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
     <style>
         body { font-family: monospace; background: #121212; color: #00ffcc; padding: 20px; }
@@ -16,7 +15,7 @@
 <body>
 
     <h2>TUSD-Nitro Liquidity Audit</h2>
-    <p>Tap below to query the live BSC pool contract directly from your phone.</p>
+    <p>Tap below to query the live BSC pool contract with fallback routing.</p>
     
     <button onclick="runAudit()">Run Pool Audit</button>
 
@@ -28,12 +27,33 @@
     <script>
         async function runAudit() {
             const output = document.getElementById("output");
-            output.innerText = "Connecting to BSC network...";
+            output.innerText = "Connecting to BSC network via multi-node fallback...";
+
+            // Fallback RPC list to bypass mobile node blocks or timeouts
+            const rpcUrls = [
+                "https://bsc-dataseed1.binance.org/",
+                "https://bsc-dataseed2.binance.org/",
+                "https://rpc.ankr.com/bsc"
+            ];
+
+            let provider = null;
+            for (const url of rpcUrls) {
+                try {
+                    const p = new ethers.providers.JsonRpcProvider(url);
+                    await p.getBlockNumber(); // Test connection
+                    provider = p;
+                    break;
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            if (!provider) {
+                output.innerText = "Error: Could not connect to any BSC public RPC nodes.";
+                return;
+            }
 
             try {
-                // Connect to Binance Smart Chain public RPC
-                const provider = new ethers.providers.JsonRpcProvider("https://bsc-dataseed.binance.org/");
-
                 const PAIR_ADDRESS = "0x859f7dc6c5bd2fb75a765cbba63a071941cdb2ac";
                 const TUSD_TOKEN_ADDRESS = "0xcf11e2D51481Cb59Bf015FCc84324d1659984D07";
 
@@ -91,7 +111,7 @@
                     `${statusText}`;
 
             } catch (err) {
-                output.innerText = "Error querying blockchain: " + err.message;
+                output.innerText = "Error querying contract: " + err.message + "\n\n(Tip: Check if the pair address is correct or if the RPC node rejected the call payload).";
             }
         }
     </script>
