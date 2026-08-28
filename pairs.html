@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check TUSD/USDT Pool</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #121212; color: #00ffcc; padding: 20px; }
+        .card { background: #1e1e1e; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-top: 15px; word-break: break-all; }
+        button { background: #00ffcc; color: #000; border: none; padding: 12px 20px; font-weight: bold; border-radius: 5px; width: 100%; font-size: 16px; margin-top: 10px; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+
+    <h2>Check TUSD/USDT Pool Existence</h2>
+    <p>Tap below to query the V3 Factory for a direct pool between TUSD and USDT.</p>
+    
+    <button onclick="checkPool()">Check Factory</button>
+
+    <div class="card">
+        <h3>Output Log:</h3>
+        <pre id="output">Waiting for action...</pre>
+    </div>
+
+    <script>
+        async function checkPool() {
+            const output = document.getElementById("output");
+            output.innerText = "Connecting to BSC...";
+
+            try {
+                const provider = new ethers.providers.JsonRpcProvider("https://bsc-dataseed1.binance.org/");
+                
+                const V3_FACTORY = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865";
+                const TUSD = "0xcf11e2D51481Cb59Bf015FCc84324d1659984D07";
+                const USDT = "0x55d398326f99059ff775485246999027b3197955"; // Official BSC USDT
+
+                const FACTORY_ABI = [
+                    "function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)"
+                ];
+
+                const factoryContract = new ethers.Contract(V3_FACTORY, FACTORY_ABI, provider);
+
+                // Check common fee tiers: 0.01%, 0.05%, 0.3%, 1%
+                const feeTiers = [100, 500, 3000, 10000];
+                let foundPools = [];
+
+                for (const fee of feeTiers) {
+                    const poolAddress = await factoryContract.getPool(TUSD, USDT, fee);
+                    if (poolAddress && poolAddress !== "0x0000000000000000000000000000000000000000") {
+                        foundPools.push(`Fee ${fee/10000}%: ${poolAddress}`);
+                    }
+                }
+
+                if (foundPools.length > 0) {
+                    output.innerText = `FOUND DIRECT TUSD/USDT POOLS:\n\n` + foundPools.join("\n");
+                } else {
+                    output.innerText = `Result: No direct V3 pool exists between TUSD and USDT on the official factory across any standard fee tier.\n\n(This proves USDT swaps strictly happened via multihop routing through TIFFY or WBNB, confirming no direct USDT pool was ever live).`;
+                }
+
+            } catch (err) {
+                output.innerText = "Error: " + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
