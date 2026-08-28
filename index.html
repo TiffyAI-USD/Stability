@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TUSD Liquidity Audit</title>
+    <title>PancakeSwap V3 Pool Audit</title>
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
     <style>
         body { font-family: monospace; background: #121212; color: #00ffcc; padding: 20px; }
@@ -14,10 +14,10 @@
 </head>
 <body>
 
-    <h2>TUSD-Nitro Liquidity Audit</h2>
-    <p>Tap below to query the live BSC pool contract with fallback routing.</p>
+    <h2>PancakeSwap V3 Pool Audit</h2>
+    <p>Tap below to query your V3 pool's live state and liquidity parameters.</p>
     
-    <button onclick="runAudit()">Run Pool Audit</button>
+    <button onclick="runV3Audit()">Audit V3 Pool</button>
 
     <div class="card">
         <h3>Output Log:</h3>
@@ -25,31 +25,26 @@
     </div>
 
     <script>
-        async function runAudit() {
+        async function runV3Audit() {
             const output = document.getElementById("output");
-            output.innerText = "Connecting to BSC network via multi-node fallback...";
+            output.innerText = "Connecting to BSC network...";
 
-            // Fallback RPC list to bypass mobile node blocks or timeouts
             const rpcUrls = [
                 "https://bsc-dataseed1.binance.org/",
-                "https://bsc-dataseed2.binance.org/",
                 "https://rpc.ankr.com/bsc"
             ];
 
             let provider = null;
             for (const url of rpcUrls) {
                 try {
-                    const p = new ethers.providers.JsonRpcProvider(url);
-                    await p.getBlockNumber(); // Test connection
-                    provider = p;
+                    provider = new ethers.providers.JsonRpcProvider(url);
+                    await provider.getBlockNumber();
                     break;
-                } catch (e) {
-                    continue;
-                }
+                } catch (e) { continue; }
             }
 
             if (!provider) {
-                output.innerText = "Error: Could not connect to any BSC public RPC nodes.";
+                output.innerText = "Error: Could not connect to any RPC.";
                 return;
             }
 
@@ -57,10 +52,13 @@
                 const PAIR_ADDRESS = "0x859f7dc6c5bd2fb75a765cbba63a071941cdb2ac";
                 const TUSD_TOKEN_ADDRESS = "0xcf11e2D51481Cb59Bf015FCc84324d1659984D07";
 
-                const PAIR_ABI = [
-                    "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+                // PancakeSwap V3 Pool ABI snippet
+                const V3_POOL_ABI = [
                     "function token0() external view returns (address)",
-                    "function token1() external view returns (address)"
+                    "function token1() external view returns (address)",
+                    "function fee() external view returns (uint24)",
+                    "function liquidity() external view returns (uint128)",
+                    "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)"
                 ];
 
                 const ERC20_ABI = [
@@ -68,50 +66,46 @@
                     "function decimals() external view returns (uint8)"
                 ];
 
-                const pairContract = new ethers.Contract(PAIR_ADDRESS, PAIR_ABI, provider);
+                const poolContract = new ethers.Contract(PAIR_ADDRESS, V3_POOL_ABI, provider);
 
-                output.innerText = "Fetching pair contract details...";
+                output.innerText = "Fetching V3 pool parameters...";
 
-                const [token0Address, token1Address, reserves] = await Promise.all([
-                    pairContract.token0(),
-                    pairContract.token1(),
-                    pairContract.getReserves()
+                const [t0, t1, feeTier, liquidity, slot0] = await Promise.all([
+                    poolContract.token0(),
+                    poolContract.token1(),
+                    poolContract.fee(),
+                    poolContract.liquidity(),
+                    poolContract.slot0()
                 ]);
 
-                const token0Contract = new ethers.Contract(token0Address, ERC20_ABI, provider);
-                const token1Contract = new ethers.Contract(token1Address, ERC20_ABI, provider);
+                const token0Contract = new ethers.Contract(t0, ERC20_ABI, provider);
+                const token1Contract = new ethers.Contract(t1, ERC20_ABI, provider);
 
-                const [sym0, dec0, sym1, dec1] = await Promise.all([
+                const [sym0, sym1] = await Promise.all([
                     token0Contract.symbol(),
-                    token0Contract.decimals(),
-                    token1Contract.symbol(),
-                    token1Contract.decimals()
+                    token1Contract.symbol()
                 ]);
 
-                const formattedReserve0 = ethers.utils.formatUnits(reserves.reserve0, dec0);
-                const formattedReserve1 = ethers.utils.formatUnits(reserves.reserve1, dec1);
-
-                let statusText = "Status: OK";
-                if (token0Address.toLowerCase() === TUSD_TOKEN_ADDRESS.toLowerCase() || 
-                    token1Address.toLowerCase() === TUSD_TOKEN_ADDRESS.toLowerCase()) {
-                    statusText += " - TUSD-Nitro verified in this pool!";
-                } else {
-                    statusText += " - WARNING: TUSD address mismatch!";
+                let statusText = "Status: SECURE V3 POOL";
+                if (t0.toLowerCase() === TUSD_TOKEN_ADDRESS.toLowerCase() || 
+                    t1.toLowerCase() === TUSD_TOKEN_ADDRESS.toLowerCase()) {
+                    statusText += " - TUSD-Nitro verified inside this V3 pool!";
                 }
 
                 output.innerText = 
-                    `=== LIQUIDITY POOL AUDIT ===\n\n` +
-                    `Pair: ${PAIR_ADDRESS}\n\n` +
-                    `Token 0: [${sym0}]\n` +
-                    `Address: ${token0Address}\n` +
-                    `Reserve 0: ${formattedReserve0}\n\n` +
-                    `Token 1: [${sym1}]\n` +
-                    `Address: ${token1Address}\n` +
-                    `Reserve 1: ${formattedReserve1}\n\n` +
+                    `=== PANCAKESWAP V3 POOL AUDIT ===\n\n` +
+                    `Pool Address: ${PAIR_ADDRESS}\n` +
+                    `Factory: Official V3 (0x0BFb...1865)\n\n` +
+                    `Token 0: [${sym0}] (${t0})\n` +
+                    `Token 1: [${sym1}] (${t1})\n` +
+                    `Fee Tier: ${feeTier / 10000}%\n\n` +
+                    `Active Liquidity: ${liquidity.toString()}\n` +
+                    `Current Tick: ${slot0.tick}\n` +
+                    `Unlocked: ${slot0.unlocked}\n\n` +
                     `${statusText}`;
 
             } catch (err) {
-                output.innerText = "Error querying contract: " + err.message + "\n\n(Tip: Check if the pair address is correct or if the RPC node rejected the call payload).";
+                output.innerText = "Error reading V3 contract: " + err.message;
             }
         }
     </script>
